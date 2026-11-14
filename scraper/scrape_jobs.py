@@ -84,7 +84,7 @@ def extract_jobs(json_data):
     jobs = []
     for item in json_data["data"]:
         jobs.append({
-            "job_id": item.get("Jobid"),
+            "job_id": int(item.get("Jobid")),  # always an integer, so repeats match across days
             "title": item.get("jobTitle"),
             "company": item.get("companyName"),
             "location": item.get("location"),
@@ -120,7 +120,14 @@ def save_data(jobs):
     if os.path.exists(MASTER_DATA_PATH):
         master_df = pd.read_csv(MASTER_DATA_PATH)
         combined = pd.concat([master_df, df], ignore_index=True)
-        combined.drop_duplicates(subset=["job_id"], keep="last", inplace=True)
+        # Make job_id a plain integer on both sides. Mixing text ("123") and numbers (123)
+        # made drop_duplicates miss repeats, so the same job was saved again every day.
+        combined["job_id"] = pd.to_numeric(combined["job_id"], errors="coerce")
+        combined = combined.dropna(subset=["job_id"])
+        combined["job_id"] = combined["job_id"].astype("int64")
+        # Newest rows come last, so keep="last" keeps the freshest copy of each job.
+        # This also cleans up duplicates that are already stored in the master file.
+        combined = combined.drop_duplicates(subset=["job_id"], keep="last")
         combined.to_csv(MASTER_DATA_PATH, index=False, encoding="utf-8-sig")
         print(f"Master file now has {len(combined)} unique jobs.")
     else:
